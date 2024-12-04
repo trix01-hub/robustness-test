@@ -60,3 +60,14 @@ The implementation of S-PPO (WocaR) is in the `src_wocar/` folder, and S-PPO (S-
 3. [High-Dimensional Continuous Control Using Generalized Advantage Estimation](https://arxiv.org/pdf/1506.02438.pdf) (Schulman et al., 2016)
 4. [GitHub Repository with several helpful implementation ideas](https://github.com/joschu/modular_rl) (Schulman)
 [By Patrick Coady](https://github.com/pat-coady/trpo/tree/aigym_evaluation)
+
+
+
+
+
+
+
+
+
+
+train_deterministic_hopper_v4 -> train_deterministic

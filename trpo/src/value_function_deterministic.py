@@ -100,7 +100,6 @@ class NNValueFunction(object):
         loss = np.mean(np.square(y_hat - y))         # explained variance after update
         exp_var = 1 - np.var(y - y_hat) / np.var(y)  # diagnose over-fitting of val func
 
-        #Save NNValueFunction datas
         value_function_data = {"replay_buffer_x": self.replay_buffer_x, "replay_buffer_y": self.replay_buffer_y}
         if(episodes % self.save_x_episode_model == 0):
             with open(self.model_path + '/' + str(episodes) + "/info/value_function.pkl", "wb") as f:

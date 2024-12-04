@@ -29,18 +29,14 @@ import pickle
 import gym
 import numpy as np
 import random
-from gym import wrappers
-from policy_hopper_dynamic import Policy
+from policy_dynamic import Policy
 from value_function_deterministic import NNValueFunction
 import scipy.signal
 from utils import Logger, Scaler
 from datetime import datetime
 import os
 import argparse
-import signal
-import time
 import tensorflow as tf
-import platform
 
 
 all_steps = 0
@@ -127,7 +123,7 @@ def run_episode(env, policy, scaler, animate, max_iteration, seed):
             np.array(rewards, dtype=np.float32), np.concatenate(unscaled_obs), counter)
 
 
-def run_policy(env, policy, scaler, logger, episodes, animate, episode, max_iteration, save_x_episode_model, seed):
+def run_policy(env, policy, scaler, logger, animate, episode, max_iteration, seed):
     global model_path
     global all_steps
     global ep_it
@@ -347,10 +343,8 @@ def main(num_episodes, gamma, lam, kl_targ, batch_size, animate, model_folder, m
     env, obs_dim, act_dim = init_gym(env_name, seed)
     obs_dim += 1  # add 1 to obs dimension for time step feature (see run_episode())
 
-    now = datetime.now().strftime("%Y-%m-%d_%H" + 'h' + "_%M" + 'm' + "_%S" + 's' + '--' + model_folder)  # create unique directories with model name
+    now = datetime.now().strftime("%Y-%m-%d_%H" + 'h' + "_%M" + 'm' + "_%S" + 's' + '--' + model_folder)
     logger = Logger(logname=env_name, now=now)
-    #aigym_path = os.path.join('/tmp', env_name, now)
-    #env = wrappers.Monitor(env, aigym_path, force=True)
     if(os.path.exists(model_path + '/info/episodes.txt')):
         with open(model_path + '/info/episodes.txt') as f:
             episode = int(f.readlines()[0])
@@ -360,11 +354,11 @@ def main(num_episodes, gamma, lam, kl_targ, batch_size, animate, model_folder, m
         episode = 0
         scaler = Scaler(obs_dim)
         val_func = NNValueFunction(obs_dim, model_path, save_x_episode_model, seed)
-    policy = Policy(obs_dim, act_dim, kl_targ, batch_size, model_path, save_x_episode_model, seed)
+    policy = Policy(obs_dim, act_dim, kl_targ, batch_size, model_path, save_x_episode_model, seed, 1150000)
     # run a few episodes of untrained policy to initialize scaler:
-    run_policy(env, policy, scaler, logger, 5, animate, episode, max_iteration, save_x_episode_model, seed)
+    run_policy(env, policy, scaler, logger, animate, episode, max_iteration, seed)
     while all_steps < 23000000:
-        trajectories = run_policy(env, policy, scaler, logger, batch_size, animate, episode, max_iteration, save_x_episode_model, seed)
+        trajectories = run_policy(env, policy, scaler, logger, animate, episode, max_iteration, seed)
         episode += len(trajectories)
         add_value(trajectories, val_func)  # add estimated values to episodes
         add_disc_sum_rew(trajectories, gamma)  # calculated discounted sum of Rs
@@ -373,9 +367,9 @@ def main(num_episodes, gamma, lam, kl_targ, batch_size, animate, model_folder, m
         observes, actions, advantages, disc_sum_rew = build_train_set(trajectories)
         # add various stats to training log:
         log_batch_stats(observes, actions, advantages, disc_sum_rew, logger, episode)
-        policy.update(observes, actions, advantages, logger, all_steps)  # update policy
-        val_func.fit(observes, disc_sum_rew, logger, episode)  # update value function
-        logger.write(display=True)  # write logger results to file and stdout
+        policy.update(observes, actions, advantages, logger, all_steps)
+        val_func.fit(observes, disc_sum_rew, logger, episode)
+        logger.write(display=True)
         if all_steps > 23000000:
             policy.save_policy(all_steps)
     logger.close()

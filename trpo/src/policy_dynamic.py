@@ -10,7 +10,7 @@ import os
 
 class Policy(object):
     """ NN-based policy approximation """
-    def __init__(self, obs_dim, act_dim, kl_targ, batch_size, model_path, save_x_episode_model, seed):
+    def __init__(self, obs_dim, act_dim, kl_targ, batch_size, model_path, save_x_episode_model, seed, divider):
         """
         Args:
             obs_dim: num observation dimensions (int)
@@ -18,6 +18,7 @@ class Policy(object):
             kl_targ: target KL divergence between pi_old and pi_new
         """
 
+        self.divider = divider
         self.seed = seed
         self.save_x_episode_model = save_x_episode_model
         self.model_path = model_path
@@ -226,18 +227,12 @@ class Policy(object):
             if self.beta < (1 / 30) and self.lr_multiplier < 10:
                 self.lr_multiplier *= 1.5
 
-        # https://cv-tricks.com/tensorflow-tutorial/save-restore-tensorflow-models-quick-complete-tutorial/
-        # when we don’t want to write the meta-graph we use this: write_meta_graph=False
-        # saves a model every 2 hours and maximum 4 latest models are saved.
-        # saver = tf.train.Saver(max_to_keep=4, keep_checkpoint_every_n_hours=2)
-        # Ha csak specifikus változókat szeretnénk menteni: saver = tf.train.Saver([self.beta,self.kl_targ, ...])
-        self.all_steps = all_steps # 7500000
-        if(self.all_steps_remainder < all_steps//1065000):
-            self.all_steps_remainder = all_steps//1065000
-            # Save episode numbers
+        self.all_steps = all_steps
+        if(self.all_steps_remainder < all_steps//self.divider):
+            self.all_steps_remainder = all_steps//self.divider
             with open(self.model_path + '/' + str(all_steps) + '/info/episodes.txt', 'w') as f:
                 f.write(str(all_steps))
-            self.save_policy(all_steps)
+            self.save_policy()
 
         logger.log({'PolicyLoss': loss,
                     'PolicyEntropy': entropy,
@@ -246,7 +241,7 @@ class Policy(object):
                     '_lr_multiplier': self.lr_multiplier})
 
 
-    def save_policy(self, all_steps):
+    def save_policy(self):
         policy_data = {"beta": self.beta, "lr_multiplier": self.lr_multiplier}
 
         self.saver.save(self.sess, self.model_path + '/' + str(self.all_steps) + '/model', global_step=self.all_steps)

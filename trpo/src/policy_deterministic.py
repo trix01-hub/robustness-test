@@ -224,20 +224,12 @@ class Policy(object):
             if self.beta < (1 / 30) and self.lr_multiplier < 10:
                 self.lr_multiplier *= 1.5
 
-        # https://cv-tricks.com/tensorflow-tutorial/save-restore-tensorflow-models-quick-complete-tutorial/
-        # when we don’t want to write the meta-graph we use this: write_meta_graph=False
-        # saves a model every 2 hours and maximum 4 latest models are saved.
-        # saver = tf.train.Saver(max_to_keep=4, keep_checkpoint_every_n_hours=2)
-        # Ha csak specifikus változókat szeretnénk menteni: saver = tf.train.Saver([self.beta,self.kl_targ, ...])
         self.episodes += self.batch_size
         policy_data = {"beta": self.beta, "lr_multiplier": self.lr_multiplier}
         if(self.episodes % self.save_x_episode_model == 0):
-            # Save episode numbers
             with open(self.model_path + '/' + str(self.episodes) + '/info/episodes.txt', 'w') as f:
                 f.write(str(self.episodes))
-            # Save model meta data
             self.saver.save(self.sess, self.model_path + '/' + str(self.episodes) + '/model', global_step=self.episodes)
-            # Save policy attributes
             with open(self.model_path + '/' + str(self.episodes) + "/info/policy.pkl", "wb") as f:
                 pickle.dump(policy_data, f)
 

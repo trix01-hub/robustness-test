@@ -15,7 +15,6 @@ def init_gym():
 
 def run_episode(policy, scaler, env, seed):
     obs = env.reset(seed=seed)
-    done = False
     step = 0.0
     n_step = 0
     scale, offset = scaler.get()
@@ -36,7 +35,6 @@ def run_episode(policy, scaler, env, seed):
         if not env.is_healthy:
             print(rewards/n_step)
     print(f'nr of steps: {n_step}')
-
     return n_step, rewards
 
 
@@ -56,24 +54,19 @@ def main(models, excel_name):
 
     for seed in range(0, 10):
         model_array = models_names
-        #model_array = ["292/1260"]
+
         for model_name in model_array:
-            try:
-                model_path = os.path.realpath(os.path.join(os.path.dirname(__file__), '../../../model/' + model_name))
-                print(model_path)
-                env, obs_dim, act_dim = init_gym()
-                obs_dim += 1
-                scaler = Scaler(model_path)
-                policy = Policy(obs_dim, act_dim, model_path)
-                steps, rewards = run_policy(policy, scaler, env, seed)
-                datas["Model"].append(model_name)
-                datas["Steps"].append(steps)
-                datas["Reward Divided by Steps"].append(rewards / steps)
-                datas["Rewards"].append(rewards)
-                datas["Seed"].append(seed)
-            except Exception as e:
-                print(e)
-                continue
+            model_path = os.path.realpath(os.path.join(os.path.dirname(__file__), '../../../model/' + model_name))
+            env, obs_dim, act_dim = init_gym()
+            obs_dim += 1
+            scaler = Scaler(model_path)
+            policy = Policy(obs_dim, act_dim, model_path)
+            steps, rewards = run_policy(policy, scaler, env, seed)
+            datas["Model"].append(model_name)
+            datas["Steps"].append(steps)
+            datas["Reward Divided by Steps"].append(rewards / steps)
+            datas["Rewards"].append(rewards)
+            datas["Seed"].append(seed)
         writer = pd.ExcelWriter('../2024_04_29_evals/' + excel_name + '.xlsx', engine = 'xlsxwriter')
 
         datas_df = pd.DataFrame(datas)
@@ -84,7 +77,8 @@ def main(models, excel_name):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('models', type=str, help='OpenAI Gym model folder')
-    parser.add_argument('-en', '--excel_name', type=str, help='Env Name', default='Hopper-v4')
+    parser.add_argument('-en', '--excel_name', type=str, help='Output Excel Name', required=True)
+    parser.add_argument('-env', '--environment', type=str, help='Env Name (like Hopper-v4 or Walker2d-v4)', required=True)
 
     os.environ["CUDA_VISIBLE_DEVICES"] = str(0)
     physical_devices = tf.config.list_physical_devices('GPU')

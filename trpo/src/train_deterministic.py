@@ -28,7 +28,6 @@ the MuJoCo control tasks.
 import pickle
 import gym
 import numpy as np
-from gym import wrappers
 from policy_deterministic import Policy
 from value_function_deterministic import NNValueFunction
 import scipy.signal
@@ -36,11 +35,7 @@ from utils import Logger, Scaler
 from datetime import datetime
 import os
 import argparse
-import signal
-import time
 import tensorflow as tf
-import platform
-import random
 
 globTimes = []
 model_path = os.path.realpath(os.path.join(os.path.dirname(__file__), '../model'))
@@ -112,7 +107,7 @@ def run_episode(env, policy, scaler, animate, max_iteration):
             np.array(rewards, dtype=np.float64), np.concatenate(unscaled_obs))
 
 
-def run_policy(env, policy, scaler, logger, episodes, animate, episode, max_iteration, save_x_episode_model):
+def run_policy(env, policy, scaler, logger, episodes, animate, episode, save_x_episode_model):
     global model_path
     """ Run policy and collect data for a minimum of min_steps and min_episodes
 
@@ -301,8 +296,6 @@ def main(num_episodes, gamma, lam, kl_targ, batch_size, animate, model_folder, m
 
     now = datetime.now().strftime("%Y-%m-%d_%H" + 'h' + "_%M" + 'm' + "_%S" + 's' + '--' + model_folder)  # create unique directories with model name
     logger = Logger(logname=env_name, now=now)
-    #aigym_path = os.path.join('/tmp', env_name, now)
-    #env = wrappers.Monitor(env, aigym_path, force=True)
     if(os.path.exists(model_path + '/info/episodes.txt')):
         with open(model_path + '/info/episodes.txt') as f:
             episode = int(f.readlines()[0])
@@ -314,9 +307,9 @@ def main(num_episodes, gamma, lam, kl_targ, batch_size, animate, model_folder, m
         val_func = NNValueFunction(obs_dim, model_path, save_x_episode_model, seed)
     policy = Policy(obs_dim, act_dim, kl_targ, batch_size, model_path, save_x_episode_model, seed)
     # run a few episodes of untrained policy to initialize scaler:
-    run_policy(env, policy, scaler, logger, 5, animate, episode, max_iteration, save_x_episode_model)
+    run_policy(env, policy, scaler, logger, 5, animate, episode, save_x_episode_model)
     while episode < num_episodes:
-        trajectories = run_policy(env, policy, scaler, logger, batch_size, animate, episode, max_iteration, save_x_episode_model)
+        trajectories = run_policy(env, policy, scaler, logger, batch_size, animate, episode, save_x_episode_model)
         episode += len(trajectories)
         add_value(trajectories, val_func)  # add estimated values to episodes
         add_disc_sum_rew(trajectories, gamma)  # calculated discounted sum of Rs
@@ -325,9 +318,9 @@ def main(num_episodes, gamma, lam, kl_targ, batch_size, animate, model_folder, m
         observes, actions, advantages, disc_sum_rew = build_train_set(trajectories)
         # add various stats to training log:
         log_batch_stats(observes, actions, advantages, disc_sum_rew, logger, episode)
-        policy.update(observes, actions, advantages, logger)  # update policy
-        val_func.fit(observes, disc_sum_rew, logger, episode)  # update value function
-        logger.write(display=True)  # write logger results to file and stdout
+        policy.update(observes, actions, advantages, logger)
+        val_func.fit(observes, disc_sum_rew, logger, episode)
+        logger.write(display=True)
     logger.close()
     policy.close_sess()
     val_func.close_sess()
