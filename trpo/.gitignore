@@ -1,0 +1,24 @@
+# logs and checkpoints
+test-project/.idea/
+test-project/*.log
+test-project/notebooks/__pycache__/
+test-project/notebooks/.ipynb_checkpoints/
+test-project/src/__pycache__/
+test-project/src/evaluate/__pycache__/
+test-project/src/log-files/
+test-project/src/.ipynb_checkpoints/
+test-project/tmp/
+test-project/MUJOCO_LOG.TXT
+test-project/venv/
+
+# generated files
+test-project/exportToHTML/
+
+# model datas for continue training
+# test-project/model/*/info/value_function.pkl
+# test-project/model/*/info/policy.pkl
+test-project/model/*
+
+#...
+secret_notes/
+.idea/
