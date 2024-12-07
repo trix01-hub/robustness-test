@@ -42,15 +42,14 @@ def init_gym(env_name, seed):
     return env, obs_dim, act_dim
 
 
-def run_episode(env, policy, scaler, animate, max_iteration, seed):
-    """ Run single episode with option to animate
+def run_episode(env, policy, scaler):
+    """ Run single episode
 
     Args:
         env: ai gym environment
         policy: policy object with sample() method
         scaler: scaler object, used to scale/offset each observation dimension
             to a similar range
-        animate: boolean, True uses env.render() method to animate episode
 
     Returns: 4-tuple of NumPy arrays
         observes: shape = (episode len, obs_dim)
@@ -62,7 +61,6 @@ def run_episode(env, policy, scaler, animate, max_iteration, seed):
     global max_it
     obs = env.reset()
     observes, actions, rewards, unscaled_obs = [], [], [], []
-    done = False
     step = 0.0
     scale, offset = scaler.get()
     scale[-1] = 1.0  # don't scale time step feature
@@ -71,8 +69,6 @@ def run_episode(env, policy, scaler, animate, max_iteration, seed):
     counter = 0
     obs = obs[0]
     while env.is_healthy and i < max_it:
-        if animate:
-            env.render()
         obs = obs.astype(np.float32).reshape((1, -1))
         obs = np.append(obs, [[step]], axis=1)  # add time step feature
         unscaled_obs.append(obs)
@@ -81,8 +77,7 @@ def run_episode(env, policy, scaler, animate, max_iteration, seed):
         action = policy.sample(obs).reshape((1, -1)).astype(np.float32)
         actions.append(action)
         action = action[0]
-        plus_cost = env.control_cost(action)
-        obs, reward, done, _, _ = env.step(action)
+        obs, reward, _, _, _ = env.step(action)
         all_steps += 1
         if not isinstance(reward, float):
             reward = np.asscalar(reward)
@@ -96,7 +91,7 @@ def run_episode(env, policy, scaler, animate, max_iteration, seed):
             np.array(rewards, dtype=np.float32), np.concatenate(unscaled_obs), counter)
 
 
-def run_policy(env, policy, scaler, logger, animate, episode, max_iteration, seed):
+def run_policy(env, policy, scaler, logger, episode, save_x_iteration_model):
     global model_path
     global all_steps
     global ep_it
@@ -122,7 +117,7 @@ def run_policy(env, policy, scaler, logger, animate, episode, max_iteration, see
     trajectories = []
     all_counter = 0
     for e in range(ep_it):
-        observes, actions, rewards, unscaled_obs, counter = run_episode(env, policy, scaler, animate, max_iteration, seed)
+        observes, actions, rewards, unscaled_obs, counter = run_episode(env, policy, scaler)
         total_steps += observes.shape[0]
         trajectory = {'observes': observes,
                       'actions': actions,
@@ -152,7 +147,7 @@ def run_policy(env, policy, scaler, logger, animate, episode, max_iteration, see
     # Save scalar datas
     scalar_data = {"vars": scaler.vars, "means": scaler.means, "m": scaler.m}
     episode += ep_it
-    if(policy.all_steps_remainder < all_steps//1150000):
+    if(policy.all_steps_remainder < all_steps//save_x_iteration_model):
         if not os.path.exists(model_path + '/' + str(all_steps) + '/info'):
             os.makedirs(model_path + '/' + str(all_steps) + '/info')
         with open(model_path + '/' + str(all_steps) + "/info/scalar.pkl", "wb") as f:
@@ -279,19 +274,9 @@ def log_batch_stats(observes, actions, advantages, disc_sum_rew, logger, episode
                 })
 
 
-def main(num_episodes, gamma, lam, kl_targ, batch_size, animate, model_folder, max_iteration, save_x_episode_model, seed, env_name):
+def main(gamma, lam, kl_targ, max_iteration, seed, env_name, training_steps, save_x_iteration_model):
     global model_path
     global all_steps
-    """ Main training loop
-
-    Args:
-        env_name: OpenAI Gym environment name, e.g. 'Hopper-v1'
-        num_episodes: maximum number of episodes to run
-        gamma: reward discount factor (float)
-        lam: lambda from Generalized Advantage Estimate
-        kl_targ: D_KL target for policy update [D_KL(pi_old || pi_new)
-        batch_size: number of episodes per policy training batch
-    """
 
     random.seed(seed)
     np.random.seed(seed)
@@ -299,38 +284,26 @@ def main(num_episodes, gamma, lam, kl_targ, batch_size, animate, model_folder, m
     tf.keras.utils.set_random_seed(seed)
     tf.config.experimental.enable_op_determinism()
 
-    if save_x_episode_model == None:
-        save_x_episode_model = num_episodes
-
-    if model_folder == None:
-        model_dirs = os.listdir(model_path)
-        model_dirs.sort()
-        dir_number = "{:03d}".format(int(model_dirs[-1]) + 1)
-        model_folder = str(dir_number)
-        model_path = model_path + '/' + str(dir_number)
-        os.makedirs(model_path)
-    else:
-        model_path = model_path + '/' + model_folder
+    model_dirs = os.listdir(model_path)
+    model_dirs.sort()
+    dir_number = "{:03d}".format(int(model_dirs[-1]) + 1)
+    model_folder = str(dir_number)
+    model_path = model_path + '/' + str(dir_number)
+    os.makedirs(model_path)
 
     env, obs_dim, act_dim = init_gym(env_name, seed)
     obs_dim += 1  # add 1 to obs dimension for time step feature (see run_episode())
 
     now = datetime.now().strftime("%Y-%m-%d_%H" + 'h' + "_%M" + 'm' + "_%S" + 's' + '--' + model_folder)
     logger = Logger(logname=env_name, now=now)
-    if(os.path.exists(model_path + '/info/episodes.txt')):
-        with open(model_path + '/info/episodes.txt') as f:
-            episode = int(f.readlines()[0])
-            scaler = Scaler(obs_dim, model_path, True)
-            val_func = NNValueFunction(obs_dim, model_path, save_x_episode_model, seed, True)
-    else:
-        episode = 0
-        scaler = Scaler(obs_dim)
-        val_func = NNValueFunction(obs_dim, model_path, save_x_episode_model, seed)
-    policy = Policy(obs_dim, act_dim, kl_targ, batch_size, model_path, save_x_episode_model, seed, 1150000)
+    episode = 0
+    scaler = Scaler(obs_dim)
+    val_func = NNValueFunction(obs_dim, model_path, seed)
+    policy = Policy(obs_dim, act_dim, kl_targ, model_path, seed, save_x_iteration_model)
     # run a few episodes of untrained policy to initialize scaler:
-    run_policy(env, policy, scaler, logger, animate, episode, max_iteration, seed)
-    while all_steps < 23000000:
-        trajectories = run_policy(env, policy, scaler, logger, animate, episode, max_iteration, seed)
+    run_policy(env, policy, scaler, logger, episode, max_iteration, seed, save_x_iteration_model)
+    while all_steps < training_steps:
+        trajectories = run_policy(env, policy, scaler, logger, episode, max_iteration, seed)
         episode += len(trajectories)
         add_value(trajectories, val_func)  # add estimated values to episodes
         add_disc_sum_rew(trajectories, gamma)  # calculated discounted sum of Rs
@@ -340,9 +313,9 @@ def main(num_episodes, gamma, lam, kl_targ, batch_size, animate, model_folder, m
         # add various stats to training log:
         log_batch_stats(observes, actions, advantages, disc_sum_rew, logger, episode)
         policy.update(observes, actions, advantages, logger, all_steps)
-        val_func.fit(observes, disc_sum_rew, logger, episode)
+        val_func.fit(observes, disc_sum_rew, logger)
         logger.write(display=True)
-        if all_steps > 23000000:
+        if all_steps > training_steps:
             policy.save_policy(all_steps)
     logger.close()
     policy.close_sess()
@@ -352,22 +325,12 @@ def main(num_episodes, gamma, lam, kl_targ, batch_size, animate, model_folder, m
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=('Train policy on OpenAI Gym environment '
                                                   'using Proximal Policy Optimizer'))
-    parser.add_argument('-n', '--num_episodes', type=int, help='Number of episodes to run',
-                        default=200000)
     parser.add_argument('-g', '--gamma', type=float, help='Discount factor', default=0.995)
     parser.add_argument('-l', '--lam', type=float, help='Lambda for Generalized Advantage Estimation',
                         default=0.98)
     parser.add_argument('-k', '--kl_targ', type=float, help='D_KL target value',
                         default=0.003)
-    parser.add_argument('-b', '--batch_size', type=int,
-                        help='Number of episodes per training batch',
-                        default=20)
-    parser.add_argument('-a', '--animate', type=bool,
-                        help='Render the animate of humanoid train',
-                        default=False)
-    parser.add_argument('-mf', '--model_folder', type=str, help='Continue a train from model folder', default=None)
     parser.add_argument('-mi', '--max_iteration', type=int, help='Set max iteration number', default=1000)
-    parser.add_argument('-sxem', '--save_x_episode_model', type=int, help='Save our model every x episodes', default=None)
     parser.add_argument('-s', '--seed', type=int, help='Set seed', default=0)
     parser.add_argument('-en', '--env_name', type=str, help='Environment name', default=None)
     parser.add_argument('-ts', '--training_steps', type=str, help='All step through the whole training on environment', default=None)

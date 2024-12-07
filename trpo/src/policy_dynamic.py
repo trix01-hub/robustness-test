@@ -10,7 +10,7 @@ import os
 
 class Policy(object):
     """ NN-based policy approximation """
-    def __init__(self, obs_dim, act_dim, kl_targ, batch_size, model_path, save_x_episode_model, seed, divider):
+    def __init__(self, obs_dim, act_dim, kl_targ, model_path, save_x_episode_model, seed, divider):
         """
         Args:
             obs_dim: num observation dimensions (int)
@@ -28,7 +28,6 @@ class Policy(object):
                 self.episodes = int(f.readlines()[0])
         else:
             self.episodes = 0
-        self.batch_size = batch_size
         self.all_steps_remainder = 0
         self.all_steps = 0
 

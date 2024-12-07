@@ -266,16 +266,6 @@ def log_batch_stats(observes, actions, advantages, disc_sum_rew, logger, episode
 
 def main(num_episodes, gamma, lam, kl_targ, batch_size, animate, model_folder, save_x_episode_model, seed, env_name='Hopper-v4'):
     global model_path
-    """ Main training loop
-
-    Args:
-        env_name: OpenAI Gym environment name, e.g. 'Hopper-v1'
-        num_episodes: maximum number of episodes to run
-        gamma: reward discount factor (float)
-        lam: lambda from Generalized Advantage Estimate
-        kl_targ: D_KL target for policy update [D_KL(pi_old || pi_new)
-        batch_size: number of episodes per policy training batch
-    """
 
     if save_x_episode_model == None:
         save_x_episode_model = num_episodes
@@ -295,15 +285,9 @@ def main(num_episodes, gamma, lam, kl_targ, batch_size, animate, model_folder, s
 
     now = datetime.now().strftime("%Y-%m-%d_%H" + 'h' + "_%M" + 'm' + "_%S" + 's' + '--' + model_folder)  # create unique directories with model name
     logger = Logger(logname=env_name, now=now)
-    if(os.path.exists(model_path + '/info/episodes.txt')):
-        with open(model_path + '/info/episodes.txt') as f:
-            episode = int(f.readlines()[0])
-            scaler = Scaler(obs_dim, model_path, True)
-            val_func = NNValueFunction(obs_dim, model_path, save_x_episode_model, seed, True)
-    else:
-        episode = 0
-        scaler = Scaler(obs_dim)
-        val_func = NNValueFunction(obs_dim, model_path, save_x_episode_model, seed)
+    episode = 0
+    scaler = Scaler(obs_dim)
+    val_func = NNValueFunction(obs_dim, model_path, save_x_episode_model, seed)
     policy = Policy(obs_dim, act_dim, kl_targ, batch_size, model_path, save_x_episode_model, seed)
     # run a few episodes of untrained policy to initialize scaler:
     run_policy(env, policy, scaler, logger, 5, animate, episode, save_x_episode_model)
@@ -318,7 +302,7 @@ def main(num_episodes, gamma, lam, kl_targ, batch_size, animate, model_folder, s
         # add various stats to training log:
         log_batch_stats(observes, actions, advantages, disc_sum_rew, logger, episode)
         policy.update(observes, actions, advantages, logger)
-        val_func.fit(observes, disc_sum_rew, logger, episode)
+        val_func.fit(observes, disc_sum_rew, logger)
         logger.write(display=True)
     logger.close()
     policy.close_sess()

@@ -13,7 +13,7 @@ tf.disable_v2_behavior()
 
 class NNValueFunction(object):
     """ NN-based state-value function """
-    def __init__(self, obs_dim, model_path, save_x_episode_model, seed, load_prev=False):
+    def __init__(self, obs_dim, model_path, seed):
         """
         Args:
             obs_dim: number of dimensions in observation vector (int)
@@ -22,7 +22,6 @@ class NNValueFunction(object):
 
         self.seed = seed
         self.model_path = model_path
-        self.save_x_episode_model = save_x_episode_model
         self.replay_buffer_x = None
         self.replay_buffer_y = None
         self.lr = None
@@ -67,7 +66,7 @@ class NNValueFunction(object):
         self.sess = tf.Session(graph=self.g)
         self.sess.run(self.init)
 
-    def fit(self, x, y, logger, episodes):
+    def fit(self, x, y, logger):
         """ Fit model to current data batch + previous data batch
 
         Args:
@@ -99,11 +98,6 @@ class NNValueFunction(object):
         y_hat = self.predict(x)
         loss = np.mean(np.square(y_hat - y))         # explained variance after update
         exp_var = 1 - np.var(y - y_hat) / np.var(y)  # diagnose over-fitting of val func
-
-        value_function_data = {"replay_buffer_x": self.replay_buffer_x, "replay_buffer_y": self.replay_buffer_y}
-        if(episodes % self.save_x_episode_model == 0):
-            with open(self.model_path + '/' + str(episodes) + "/info/value_function.pkl", "wb") as f:
-                pickle.dump(value_function_data, f)
 
         logger.log({'ValFuncLoss': loss,
                     'ExplainedVarNew': exp_var,
