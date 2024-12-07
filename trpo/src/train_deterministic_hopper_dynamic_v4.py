@@ -157,7 +157,6 @@ def run_policy(env, policy, scaler, logger, animate, episode, max_iteration, see
                       'unscaled_obs': unscaled_obs}
         trajectories.append(trajectory)
         all_counter += counter
-    print(max_it)
 
     if max_it == 2000 and all_counter > 7:
         max_it = 4000

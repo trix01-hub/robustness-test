@@ -38,15 +38,11 @@ import os
 import argparse
 import tensorflow as tf
 
-
 all_steps = 0
 max_it = 125
 ep_it = 160
 
-globTimes = []
 model_path = os.path.realpath(os.path.join(os.path.dirname(__file__), '../model'))
-
-
 
 def init_gym(env_name, seed):
     """
@@ -69,7 +65,7 @@ def init_gym(env_name, seed):
     return env, obs_dim, act_dim
 
 
-def run_episode(env, policy, scaler, animate, max_iteration, seed):
+def run_episode(env, policy, scaler, animate):
     """ Run single episode with option to animate
 
     Args:
@@ -89,7 +85,6 @@ def run_episode(env, policy, scaler, animate, max_iteration, seed):
     global max_it
     obs = env.reset()
     observes, actions, rewards, unscaled_obs = [], [], [], []
-    done = False
     step = 0.0
     scale, offset = scaler.get()
     scale[-1] = 1.0  # don't scale time step feature
@@ -148,7 +143,7 @@ def run_policy(env, policy, scaler, logger, animate, episode, max_iteration, see
     trajectories = []
     all_counter = 0
     for e in range(ep_it):
-        observes, actions, rewards, unscaled_obs, counter = run_episode(env, policy, scaler, animate, max_iteration, seed)
+        observes, actions, rewards, unscaled_obs, counter = run_episode(env, policy, scaler, animate)
         total_steps += observes.shape[0]
         trajectory = {'observes': observes,
                       'actions': actions,
@@ -156,7 +151,6 @@ def run_policy(env, policy, scaler, logger, animate, episode, max_iteration, see
                       'unscaled_obs': unscaled_obs}
         trajectories.append(trajectory)
         all_counter += counter
-    print(max_it)
 
     if max_it == 2000 and all_counter > 7:
         max_it = 4000
@@ -187,8 +181,6 @@ def run_policy(env, policy, scaler, logger, animate, episode, max_iteration, see
 
     logger.log({'_MeanReward': np.mean([t['rewards'].sum() for t in trajectories]),
                 'Steps': total_steps})
-
-    print("ALL STEPS: " + str(all_steps))
 
     return trajectories
 

@@ -28,6 +28,8 @@ the MuJoCo control tasks.
 import pickle
 import gym
 import numpy as np
+import random
+from gym import wrappers
 from policy_deterministic import Policy
 from value_function_deterministic import NNValueFunction
 import scipy.signal
@@ -35,11 +37,15 @@ from utils import Logger, Scaler
 from datetime import datetime
 import os
 import argparse
+import signal
+import time
 import tensorflow as tf
+import platform
 
+globTimes = []
 model_path = os.path.realpath(os.path.join(os.path.dirname(__file__), '../model'))
 
-def init_gym(env_name):
+def init_gym(env_name, seed):
     """
     Initialize gym environment, return dimension of observation
     and action spaces.
@@ -53,14 +59,14 @@ def init_gym(env_name):
         number of action dimensions (int)
     """
     env = gym.make(env_name)
-    env.action_space.seed(0)
+    env.seed(seed)
     obs_dim = env.observation_space.shape[0]
     act_dim = env.action_space.shape[0]
 
     return env, obs_dim, act_dim
 
 
-def run_episode(env, policy, scaler, animate):
+def run_episode(env, policy, scaler, animate, max_iteration, seed):
     """ Run single episode with option to animate
 
     Args:
@@ -84,29 +90,29 @@ def run_episode(env, policy, scaler, animate):
     scale[-1] = 1.0  # don't scale time step feature
     offset[-1] = 0.0  # don't offset time step feature
     i = 0
-    obs = obs[0]
-    while not done and i < 1000:
+    while env.is_healthy and i < max_iteration:
         if animate:
             env.render()
-        obs = obs.astype(np.float64).reshape((1, -1))
+        obs = obs.astype(np.float32).reshape((1, -1))
         obs = np.append(obs, [[step]], axis=1)  # add time step feature
         unscaled_obs.append(obs)
         obs = (obs - offset) * scale  # center and scale observations
         observes.append(obs)
-        action = policy.sample(obs).reshape((1, -1)).astype(np.float64)
+        action = policy.sample(obs).reshape((1, -1)).astype(np.float32)
         actions.append(action)
-        action = action[0]
-        obs, reward, done, _, _ = env.step(action)
+        obs, reward, done, _ = env.step(action)
+        reward = reward + env.control_cost(action)
         if not isinstance(reward, float):
             reward = np.asscalar(reward)
         rewards.append(reward)
         step += 1e-3  # increment time step feature
         i += 1
+
     return (np.concatenate(observes), np.concatenate(actions),
-            np.array(rewards, dtype=np.float64), np.concatenate(unscaled_obs))
+            np.array(rewards, dtype=np.float32), np.concatenate(unscaled_obs))
 
 
-def run_policy(env, policy, scaler, logger, episodes, animate, episode, save_x_episode_model):
+def run_policy(env, policy, scaler, logger, episodes, animate, episode, max_iteration, save_x_episode_model, seed):
     global model_path
     """ Run policy and collect data for a minimum of min_steps and min_episodes
 
@@ -124,10 +130,15 @@ def run_policy(env, policy, scaler, logger, episodes, animate, episode, save_x_e
         'rewards' : NumPy array of (un-discounted) rewards from episode
         'unscaled_obs' : NumPy array of (un-discounted) rewards from episode
     """
+
+    if episode >= 15000:
+        episodes = 10
+        max_iteration = 2000
+
     total_steps = 0
     trajectories = []
     for e in range(episodes):
-        observes, actions, rewards, unscaled_obs = run_episode(env, policy, scaler, animate)
+        observes, actions, rewards, unscaled_obs = run_episode(env, policy, scaler, animate, max_iteration, seed)
         total_steps += observes.shape[0]
         trajectory = {'observes': observes,
                       'actions': actions,
@@ -138,7 +149,7 @@ def run_policy(env, policy, scaler, logger, episodes, animate, episode, save_x_e
     scaler.update(unscaled)  # update running statistics for scaling observations
     # Save scalar datas
     scalar_data = {"vars": scaler.vars, "means": scaler.means, "m": scaler.m}
-    episode += 20
+    episode += episodes
     if(episode % save_x_episode_model == 0 and episode != 5 and episode != 0):
         if not os.path.exists(model_path + '/' + str(episode) + '/info'):
             os.makedirs(model_path + '/' + str(episode) + '/info')
@@ -264,7 +275,7 @@ def log_batch_stats(observes, actions, advantages, disc_sum_rew, logger, episode
                 })
 
 
-def main(num_episodes, gamma, lam, kl_targ, batch_size, animate, model_folder, save_x_episode_model, seed, env_name='Hopper-v4'):
+def main(num_episodes, gamma, lam, kl_targ, batch_size, animate, model_folder, max_iteration, save_x_episode_model, seed, env_name):
     global model_path
     """ Main training loop
 
@@ -276,6 +287,12 @@ def main(num_episodes, gamma, lam, kl_targ, batch_size, animate, model_folder, s
         kl_targ: D_KL target for policy update [D_KL(pi_old || pi_new)
         batch_size: number of episodes per policy training batch
     """
+
+    random.seed(seed)
+    np.random.seed(seed)
+    tf.random.set_seed(seed)
+    tf.keras.utils.set_random_seed(seed)
+    tf.config.experimental.enable_op_determinism()
 
     if save_x_episode_model == None:
         save_x_episode_model = num_episodes
@@ -290,7 +307,7 @@ def main(num_episodes, gamma, lam, kl_targ, batch_size, animate, model_folder, s
     else:
         model_path = model_path + '/' + model_folder
 
-    env, obs_dim, act_dim = init_gym(env_name)
+    env, obs_dim, act_dim = init_gym(env_name, seed)
     obs_dim += 1  # add 1 to obs dimension for time step feature (see run_episode())
 
     now = datetime.now().strftime("%Y-%m-%d_%H" + 'h' + "_%M" + 'm' + "_%S" + 's' + '--' + model_folder)  # create unique directories with model name
@@ -306,9 +323,9 @@ def main(num_episodes, gamma, lam, kl_targ, batch_size, animate, model_folder, s
         val_func = NNValueFunction(obs_dim, model_path, save_x_episode_model, seed)
     policy = Policy(obs_dim, act_dim, kl_targ, batch_size, model_path, save_x_episode_model, seed)
     # run a few episodes of untrained policy to initialize scaler:
-    run_policy(env, policy, scaler, logger, 5, animate, episode, save_x_episode_model)
+    run_policy(env, policy, scaler, logger, 5, animate, episode, max_iteration, save_x_episode_model, seed)
     while episode < num_episodes:
-        trajectories = run_policy(env, policy, scaler, logger, batch_size, animate, episode, save_x_episode_model)
+        trajectories = run_policy(env, policy, scaler, logger, batch_size, animate, episode, max_iteration, save_x_episode_model, seed)
         episode += len(trajectories)
         add_value(trajectories, val_func)  # add estimated values to episodes
         add_disc_sum_rew(trajectories, gamma)  # calculated discounted sum of Rs
@@ -317,9 +334,9 @@ def main(num_episodes, gamma, lam, kl_targ, batch_size, animate, model_folder, s
         observes, actions, advantages, disc_sum_rew = build_train_set(trajectories)
         # add various stats to training log:
         log_batch_stats(observes, actions, advantages, disc_sum_rew, logger, episode)
-        policy.update(observes, actions, advantages, logger)
-        val_func.fit(observes, disc_sum_rew, logger, episode)
-        logger.write(display=True)
+        policy.update(observes, actions, advantages, logger, episode)  # update policy
+        val_func.fit(observes, disc_sum_rew, logger, episode)  # update value function
+        logger.write(display=True)  # write logger results to file and stdout
     logger.close()
     policy.close_sess()
     val_func.close_sess()
@@ -342,11 +359,13 @@ if __name__ == "__main__":
                         help='Render the animate of humanoid train',
                         default=False)
     parser.add_argument('-mf', '--model_folder', type=str, help='Continue a train from model folder', default=None)
+    parser.add_argument('-mi', '--max_iteration', type=int, help='Set max iteration number', default=1000)
     parser.add_argument('-sxem', '--save_x_episode_model', type=int, help='Save our model every x episodes', default=None)
     parser.add_argument('-s', '--seed', type=int, help='Set seed', default=0)
-    parser.add_argument('-en', '--env_name', type=str, help='Env Name', default='Hopper-v4')
+    parser.add_argument('-en', '--env_name', type=str, help='Environment name', default="Hopper-v3")
 
     args = parser.parse_args()
+
     os.environ["CUDA_VISIBLE_DEVICES"] = str(0)
     physical_devices = tf.config.list_physical_devices('GPU')
     tf.config.experimental.set_memory_growth(physical_devices[0], True)
