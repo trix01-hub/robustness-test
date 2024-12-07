@@ -3,7 +3,6 @@ import numpy as np
 
 
 class Scaler(object):
-
     def __init__(self, model_path):
         scaler_file = open(model_path + "/info/scalar.pkl", "rb")
         scaler_data = pickle.load(scaler_file)
@@ -13,4 +12,3 @@ class Scaler(object):
 
     def get(self):
         return 1/(np.sqrt(self.vars) + 0.1)/3, self.means
-

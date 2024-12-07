@@ -7,11 +7,13 @@ import pandas as pd
 import gym
 import tensorflow as tf
 
+
 def init_gym():
     wrappedEnv = gym.make("Walker2d-v4")
     obs_dim = wrappedEnv.env.observation_space.shape[0]
     act_dim = wrappedEnv.env.action_space.shape[0]
     return wrappedEnv, obs_dim, act_dim
+
 
 def run_episode(policy, scaler, env, seed):
     obs = env.reset(seed=seed)
@@ -28,13 +30,10 @@ def run_episode(policy, scaler, env, seed):
         obs = (obs - offset) * scale
         action = policy.sample(obs).reshape((1, -1)).astype(np.float64)
         action = action[0]
-        obs, reward, done, _, info = env.step(action)
+        obs, _, _, _, info = env.step(action)
         rewards += info['x_velocity']
         step += 1e-3
         n_step += 1
-        if not env.is_healthy:
-            print(rewards/n_step)
-    print(f'nr of steps: {n_step}')
     return n_step, rewards
 
 
@@ -74,6 +73,7 @@ def main(models, excel_name):
 
     writer.save()
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('models', type=str, help='OpenAI Gym model folder')
@@ -86,4 +86,3 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     main(**vars(args))
-

@@ -19,18 +19,6 @@ model_path = os.path.realpath(os.path.join(os.path.dirname(__file__), '../model'
 
 
 def init_gym(env_name, seed):
-    """
-    Initialize gym environment, return dimension of observation
-    and action spaces.
-
-    Args:
-        env_name: str environment name (e.g. "Humanoid-v1")
-
-    Returns: 3-tuple
-        gym environment (object)
-        number of observation dimensions (int)
-        number of action dimensions (int)
-    """
     env = gym.make(env_name)
     env.action_space.seed(seed)
     obs_dim = env.observation_space.shape[0]
@@ -40,36 +28,22 @@ def init_gym(env_name, seed):
 
 
 def run_episode(env, policy, scaler):
-    """ Run single episode
-
-    Args:
-        env: ai gym environment
-        policy: policy object with sample() method
-        scaler: scaler object, used to scale/offset each observation dimension
-            to a similar range
-
-    Returns: 4-tuple of NumPy arrays
-        observes: shape = (episode len, obs_dim)
-        actions: shape = (episode len, act_dim)
-        rewards: shape = (episode len,)
-        unscaled_obs: useful for training scaler, shape = (episode len, obs_dim)
-    """
     global all_steps
     global max_it
     obs = env.reset()
     observes, actions, rewards, unscaled_obs = [], [], [], []
     step = 0.0
     scale, offset = scaler.get()
-    scale[-1] = 1.0  # don't scale time step feature
-    offset[-1] = 0.0  # don't offset time step feature
+    scale[-1] = 1.0
+    offset[-1] = 0.0
     i = 0
     counter = 0
     obs = obs[0]
     while env.is_healthy and i < max_it:
         obs = obs.astype(np.float32).reshape((1, -1))
-        obs = np.append(obs, [[step]], axis=1)  # add time step feature
+        obs = np.append(obs, [[step]], axis=1)
         unscaled_obs.append(obs)
-        obs = (obs - offset) * scale  # center and scale observations
+        obs = (obs - offset) * scale
         observes.append(obs)
         action = policy.sample(obs).reshape((1, -1)).astype(np.float32)
         actions.append(action)
@@ -79,7 +53,7 @@ def run_episode(env, policy, scaler):
         if not isinstance(reward, float):
             reward = np.asscalar(reward)
         rewards.append(reward)
-        step += 1e-3  # increment time step feature
+        step += 1e-3
         i += 1
         if i == max_it:
             counter = 1
@@ -93,22 +67,6 @@ def run_policy(env, policy, scaler, logger, episode, save_x_iteration_model):
     global all_steps
     global ep_it
     global max_it
-    """ Run policy and collect data for a minimum of min_steps and min_episodes
-
-    Args:
-        env: ai gym environment
-        policy: policy object with sample() method
-        scaler: scaler object, used to scale/offset each observation dimension
-            to a similar range
-        logger: logger object, used to save stats from episodes
-        episodes: total episodes to run
-
-    Returns: list of trajectory dictionaries, list length = number of episodes
-        'observes' : NumPy array of states from episode
-        'actions' : NumPy array of actions from episode
-        'rewards' : NumPy array of (un-discounted) rewards from episode
-        'unscaled_obs' : NumPy array of (un-discounted) rewards from episode
-    """
 
     total_steps = 0
     trajectories = []
@@ -140,8 +98,7 @@ def run_policy(env, policy, scaler, logger, episode, save_x_iteration_model):
         ep_it = 80
 
     unscaled = np.concatenate([t['unscaled_obs'] for t in trajectories])
-    scaler.update(unscaled)  # update running statistics for scaling observations
-    # Save scalar datas
+    scaler.update(unscaled)
     scalar_data = {"vars": scaler.vars, "means": scaler.means, "m": scaler.m}
     episode += ep_it
     if(policy.all_steps_remainder < all_steps//save_x_iteration_model):
@@ -153,28 +110,16 @@ def run_policy(env, policy, scaler, logger, episode, save_x_iteration_model):
     logger.log({'_MeanReward': np.mean([t['rewards'].sum() for t in trajectories]),
                 'Steps': total_steps})
 
-    print("ALL STEPS: " + str(all_steps))
-
     return trajectories
 
 
 def discount(x, gamma):
-    """ Calculate discounted forward sum of a sequence at each point """
     return scipy.signal.lfilter([1.0], [1.0, -gamma], x[::-1])[::-1]
 
 
 def add_disc_sum_rew(trajectories, gamma):
-    """ Adds discounted sum of rewards to all time steps of all trajectories
-
-    Args:
-        trajectories: as returned by run_policy()
-        gamma: discount
-
-    Returns:
-        None (mutates trajectories dictionary to add 'disc_sum_rew')
-    """
     for trajectory in trajectories:
-        if gamma < 0.999:  # don't scale for gamma ~= 1
+        if gamma < 0.999:
             rewards = trajectory['rewards'] * (1 - gamma)
         else:
             rewards = trajectory['rewards']
@@ -183,16 +128,6 @@ def add_disc_sum_rew(trajectories, gamma):
 
 
 def add_value(trajectories, val_func):
-    """ Adds estimated value to all time steps of all trajectories
-
-    Args:
-        trajectories: as returned by run_policy()
-        val_func: object with predict() method, takes observations
-            and returns predicted state value
-
-    Returns:
-        None (mutates trajectories dictionary to add 'values')
-    """
     for trajectory in trajectories:
         observes = trajectory['observes']
         values = val_func.predict(observes)
@@ -200,57 +135,28 @@ def add_value(trajectories, val_func):
 
 
 def add_gae(trajectories, gamma, lam):
-    """ Add generalized advantage estimator.
-    https://arxiv.org/pdf/1506.02438.pdf
-
-    Args:
-        trajectories: as returned by run_policy(), must include 'values'
-            key from add_value().
-        gamma: reward discount
-        lam: lambda (see paper).
-            lam=0 : use TD residuals
-            lam=1 : A =  Sum Discounted Rewards - V_hat(s)
-
-    Returns:
-        None (mutates trajectories dictionary to add 'advantages')
-    """
     for trajectory in trajectories:
-        if gamma < 0.999:  # don't scale for gamma ~= 1
+        if gamma < 0.999:
             rewards = trajectory['rewards'] * (1 - gamma)
         else:
             rewards = trajectory['rewards']
         values = trajectory['values']
-        # temporal differences
         tds = rewards - values + np.append(values[1:] * gamma, 0)
         advantages = discount(tds, gamma * lam)
         trajectory['advantages'] = advantages
 
 
 def build_train_set(trajectories):
-    """
-
-    Args:
-        trajectories: trajectories after processing by add_disc_sum_rew(),
-            add_value(), and add_gae()
-
-    Returns: 4-tuple of NumPy arrays
-        observes: shape = (N, obs_dim)
-        actions: shape = (N, act_dim)
-        advantages: shape = (N,)
-        disc_sum_rew: shape = (N,)
-    """
     observes = np.concatenate([t['observes'] for t in trajectories])
     actions = np.concatenate([t['actions'] for t in trajectories])
     disc_sum_rew = np.concatenate([t['disc_sum_rew'] for t in trajectories])
     advantages = np.concatenate([t['advantages'] for t in trajectories])
-    # normalize advantages
     advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-6)
 
     return observes, actions, advantages, disc_sum_rew
 
 
 def log_batch_stats(observes, actions, advantages, disc_sum_rew, logger, episode):
-    """ Log various batch statistics """
     logger.log({'_mean_obs': np.mean(observes),
                 '_min_obs': np.min(observes),
                 '_max_obs': np.max(observes),
@@ -271,7 +177,7 @@ def log_batch_stats(observes, actions, advantages, disc_sum_rew, logger, episode
                 })
 
 
-def main(gamma, lam, kl_targ, max_iteration, seed, env_name, training_steps, save_x_iteration_model):
+def main(gamma, lam, kl_targ, seed, env_name, training_steps, save_x_iteration_model):
     global model_path
     global all_steps
 
@@ -289,7 +195,7 @@ def main(gamma, lam, kl_targ, max_iteration, seed, env_name, training_steps, sav
     os.makedirs(model_path)
 
     env, obs_dim, act_dim = init_gym(env_name, seed)
-    obs_dim += 1  # add 1 to obs dimension for time step feature (see run_episode())
+    obs_dim += 1
 
     now = datetime.now().strftime("%Y-%m-%d_%H" + 'h' + "_%M" + 'm' + "_%S" + 's' + '--' + model_folder)
     logger = Logger(logname=env_name, now=now)
@@ -297,17 +203,16 @@ def main(gamma, lam, kl_targ, max_iteration, seed, env_name, training_steps, sav
     scaler = Scaler(obs_dim)
     val_func = NNValueFunction(obs_dim, model_path, seed)
     policy = Policy(obs_dim, act_dim, kl_targ, model_path, seed, save_x_iteration_model)
-    # run a few episodes of untrained policy to initialize scaler:
-    run_policy(env, policy, scaler, logger, episode, max_iteration, seed, save_x_iteration_model)
+
+    run_policy(env, policy, scaler, logger, episode, save_x_iteration_model)
+
     while all_steps < training_steps:
-        trajectories = run_policy(env, policy, scaler, logger, episode, max_iteration, seed)
+        trajectories = run_policy(env, policy, scaler, logger, episode, save_x_iteration_model)
         episode += len(trajectories)
-        add_value(trajectories, val_func)  # add estimated values to episodes
-        add_disc_sum_rew(trajectories, gamma)  # calculated discounted sum of Rs
-        add_gae(trajectories, gamma, lam)  # calculate advantage
-        # concatenate all episodes into single NumPy arrays
+        add_value(trajectories, val_func)
+        add_disc_sum_rew(trajectories, gamma)
+        add_gae(trajectories, gamma, lam)
         observes, actions, advantages, disc_sum_rew = build_train_set(trajectories)
-        # add various stats to training log:
         log_batch_stats(observes, actions, advantages, disc_sum_rew, logger, episode)
         policy.update(observes, actions, advantages, logger, all_steps)
         val_func.fit(observes, disc_sum_rew, logger)
@@ -320,25 +225,21 @@ def main(gamma, lam, kl_targ, max_iteration, seed, env_name, training_steps, sav
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=('Train policy on OpenAI Gym environment '
-                                                  'using Proximal Policy Optimizer'))
-    parser.add_argument('-g', '--gamma', type=float, help='Discount factor', default=0.995)
-    parser.add_argument('-l', '--lam', type=float, help='Lambda for Generalized Advantage Estimation',
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--gamma', type=float, help='Discount factor', default=0.995)
+    parser.add_argument('--lam', type=float, help='Lambda for Generalized Advantage Estimation',
                         default=0.98)
-    parser.add_argument('-k', '--kl_targ', type=float, help='D_KL target value',
+    parser.add_argument('--kl_targ', type=float, help='D_KL target value',
                         default=0.003)
-    parser.add_argument('-mi', '--max_iteration', type=int, help='Set max iteration number', default=1000)
-    parser.add_argument('-s', '--seed', type=int, help='Set seed', default=0)
-    parser.add_argument('-en', '--env_name', type=str, help='Environment name', default=None)
-    parser.add_argument('-ts', '--training_steps', type=str, help='All step through the whole training on environment', default=None)
-    parser.add_argument('-sxim', '--save_x_iteration_model', type=str, help='Save our model every x step', default=None)
+    parser.add_argument('--seed', type=int, help='Set seed', default=0)
+    parser.add_argument('--env_name', type=str, help='Environment name', default=None)
+    parser.add_argument('--training_steps', type=str, help='All step through the whole training on environment', default=None)
+    parser.add_argument('--save_x_iteration_model', type=str, help='Save our model every x step', default=None)
 
     args = parser.parse_args()
 
     os.environ["CUDA_VISIBLE_DEVICES"] = str(0)
     physical_devices = tf.config.list_physical_devices('GPU')
-    print(physical_devices)
     tf.config.experimental.set_memory_growth(physical_devices[0], True)
 
     main(**vars(args))
-

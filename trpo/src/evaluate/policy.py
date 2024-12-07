@@ -51,10 +51,6 @@ class Policy(object):
             new_saver = tf.compat.v1.train.import_meta_graph(self.model_path + '/model-' + str(self.episodes) + '.meta')
             new_saver.restore(self.sess, tf.train.latest_checkpoint(self.model_path))
 
-
     def sample(self, obs):
         feed_dict = {self.obs_ph: obs}
         return self.sess.run(self.sampled_act, feed_dict=feed_dict)
-
-
-
