@@ -15,8 +15,8 @@ import tensorflow as tf
 model_path = os.path.realpath(os.path.join(os.path.dirname(__file__), '../model'))
 
 
-def init_gym(env_name, seed):
-    env = gym.make(env_name)
+def init_gym(environment, seed):
+    env = gym.make(environment)
     env.seed(seed)
     obs_dim = env.observation_space.shape[0]
     act_dim = env.action_space.shape[0]
@@ -52,10 +52,10 @@ def run_episode(env, policy, scaler, max_iteration):
             np.array(rewards, dtype=np.float32), np.concatenate(unscaled_obs))
 
 
-def run_policy(env, policy, scaler, logger, episodes, episode, max_iteration, save_x_episode_model, train_on_half):
+def run_policy(env, policy, scaler, logger, episodes, episode, max_iteration, model_save_frequency, update_interval_episodes):
     global model_path
 
-    if episode >= train_on_half:
+    if episode >= update_interval_episodes:
         episodes = 10
         max_iteration = 2000
 
@@ -73,7 +73,7 @@ def run_policy(env, policy, scaler, logger, episodes, episode, max_iteration, sa
     scaler.update(unscaled)
     scalar_data = {"vars": scaler.vars, "means": scaler.means, "m": scaler.m}
     episode += episodes
-    if(episode % save_x_episode_model == 0 and episode != 5 and episode != 0):
+    if(episode % model_save_frequency == 0 and episode != 5 and episode != 0):
         if not os.path.exists(model_path + '/' + str(episode) + '/info'):
             os.makedirs(model_path + '/' + str(episode) + '/info')
         with open(model_path + '/' + str(episode) + "/info/scalar.pkl", "wb") as f:
@@ -149,7 +149,7 @@ def log_batch_stats(observes, actions, advantages, disc_sum_rew, logger, episode
                 })
 
 
-def main(num_episodes, gamma, lam, kl_targ, batch_size, model_folder, max_iteration, save_x_episode_model, seed, env_name, train_on_half):
+def main(num_episodes, gamma, lam, kl_targ, batch_size, model_folder, max_iteration, model_save_frequency, seed, environment, update_interval_episodes):
     global model_path
 
     random.seed(seed)
@@ -158,8 +158,8 @@ def main(num_episodes, gamma, lam, kl_targ, batch_size, model_folder, max_iterat
     tf.keras.utils.set_random_seed(seed)
     tf.config.experimental.enable_op_determinism()
 
-    if save_x_episode_model == None:
-        save_x_episode_model = num_episodes
+    if model_save_frequency == None:
+        model_save_frequency = num_episodes
 
     if model_folder == None:
         model_dirs = os.listdir(model_path)
@@ -171,20 +171,20 @@ def main(num_episodes, gamma, lam, kl_targ, batch_size, model_folder, max_iterat
     else:
         model_path = model_path + '/' + model_folder
 
-    env, obs_dim, act_dim = init_gym(env_name, seed)
+    env, obs_dim, act_dim = init_gym(environment, seed)
     obs_dim += 1
 
     now = datetime.now().strftime("%Y-%m-%d_%H" + 'h' + "_%M" + 'm' + "_%S" + 's' + '--' + model_folder)
-    logger = Logger(logname=env_name, now=now)
+    logger = Logger(logname=environment, now=now)
     episode = 0
     scaler = Scaler(obs_dim)
-    val_func = NNValueFunction(obs_dim, model_path, save_x_episode_model, seed)
-    policy = Policy(obs_dim, act_dim, kl_targ, batch_size, model_path, save_x_episode_model, seed)
+    val_func = NNValueFunction(obs_dim, model_path, model_save_frequency, seed)
+    policy = Policy(obs_dim, act_dim, kl_targ, batch_size, model_path, model_save_frequency, seed)
 
-    run_policy(env, policy, scaler, logger, 5, episode, max_iteration, save_x_episode_model, train_on_half)
+    run_policy(env, policy, scaler, logger, 5, episode, max_iteration, model_save_frequency, update_interval_episodes)
 
     while episode < num_episodes:
-        trajectories = run_policy(env, policy, scaler, logger, batch_size, episode, max_iteration, save_x_episode_model, train_on_half)
+        trajectories = run_policy(env, policy, scaler, logger, batch_size, episode, max_iteration, model_save_frequency, update_interval_episodes)
         episode += len(trajectories)
         add_value(trajectories, val_func)
         add_disc_sum_rew(trajectories, gamma)
@@ -212,10 +212,10 @@ if __name__ == "__main__":
                         help='Number of episodes per training batch',
                         default=20)
     parser.add_argument('--max_iteration', type=int, help='Maximum number of iterations on the environment', default=1000)
-    parser.add_argument('--save_x_episode_model', type=int, help='Save our model every x episodes', default=None)
+    parser.add_argument('--model_save_frequency', type=int, help='Frequency (in episodes) at which the model should be saved during training', default=None)
     parser.add_argument('--seed', type=int, help='Set seed', default=0)
     parser.add_argument('--environment', type=str, help='Openai GYM Mujoco Environment', default=None)
-    parser.add_argument('--train_on_half', type=str, help='The training half', default=None)
+    parser.add_argument('--update_interval_episodes', type=int, help='Number of episodes after which iteration and batch size should be updated', default=None)
 
     args = parser.parse_args()
 

@@ -4,10 +4,9 @@ import os
 
 
 class Policy(object):
-    def __init__(self, obs_dim, act_dim, kl_targ, model_path, save_x_episode_model, seed, divider):
+    def __init__(self, obs_dim, act_dim, kl_targ, model_path, seed, divider):
         self.divider = divider
         self.seed = seed
-        self.save_x_episode_model = save_x_episode_model
         self.model_path = model_path
         self.graph_path = os.path.realpath(os.path.join(os.path.dirname(__file__), '../graph'))
         self.episodes = 0

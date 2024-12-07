@@ -4,9 +4,9 @@ import os
 
 
 class Policy(object):
-    def __init__(self, obs_dim, act_dim, kl_targ, batch_size, model_path, save_x_episode_model, seed):
+    def __init__(self, obs_dim, act_dim, kl_targ, batch_size, model_path, model_save_frequency, seed):
         self.seed = seed
-        self.save_x_episode_model = save_x_episode_model
+        self.model_save_frequency = model_save_frequency
         self.model_path = model_path
         self.graph_path = os.path.realpath(os.path.join(os.path.dirname(__file__), '../graph'))
         self.episodes = 0
@@ -154,7 +154,7 @@ class Policy(object):
                 self.lr_multiplier *= 1.5
 
         self.episodes += self.batch_size
-        if(self.episodes % self.save_x_episode_model == 0):
+        if(self.episodes % self.model_save_frequency == 0):
             with open(self.model_path + '/' + str(self.episodes) + '/info/episodes.txt', 'w') as f:
                 f.write(str(self.episodes))
             self.saver.save(self.sess, self.model_path + '/' + str(self.episodes) + '/model', global_step=self.episodes)

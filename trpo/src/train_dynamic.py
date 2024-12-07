@@ -18,8 +18,8 @@ ep_it = 160
 model_path = os.path.realpath(os.path.join(os.path.dirname(__file__), '../model'))
 
 
-def init_gym(env_name, seed):
-    env = gym.make(env_name)
+def init_gym(environment, seed):
+    env = gym.make(environment)
     env.action_space.seed(seed)
     obs_dim = env.observation_space.shape[0]
     act_dim = env.action_space.shape[0]
@@ -62,7 +62,7 @@ def run_episode(env, policy, scaler):
             np.array(rewards, dtype=np.float32), np.concatenate(unscaled_obs), counter)
 
 
-def run_policy(env, policy, scaler, logger, episode, save_x_iteration_model):
+def run_policy(env, policy, scaler, logger, episode, save_steps):
     global model_path
     global all_steps
     global ep_it
@@ -101,7 +101,7 @@ def run_policy(env, policy, scaler, logger, episode, save_x_iteration_model):
     scaler.update(unscaled)
     scalar_data = {"vars": scaler.vars, "means": scaler.means, "m": scaler.m}
     episode += ep_it
-    if(policy.all_steps_remainder < all_steps//save_x_iteration_model):
+    if(policy.all_steps_remainder < all_steps//save_steps):
         if not os.path.exists(model_path + '/' + str(all_steps) + '/info'):
             os.makedirs(model_path + '/' + str(all_steps) + '/info')
         with open(model_path + '/' + str(all_steps) + "/info/scalar.pkl", "wb") as f:
@@ -177,7 +177,7 @@ def log_batch_stats(observes, actions, advantages, disc_sum_rew, logger, episode
                 })
 
 
-def main(gamma, lam, kl_targ, seed, env_name, training_steps, save_x_iteration_model):
+def main(gamma, lam, kl_targ, seed, environment, total_training_steps, save_steps):
     global model_path
     global all_steps
 
@@ -194,20 +194,20 @@ def main(gamma, lam, kl_targ, seed, env_name, training_steps, save_x_iteration_m
     model_path = model_path + '/' + str(dir_number)
     os.makedirs(model_path)
 
-    env, obs_dim, act_dim = init_gym(env_name, seed)
+    env, obs_dim, act_dim = init_gym(environment, seed)
     obs_dim += 1
 
     now = datetime.now().strftime("%Y-%m-%d_%H" + 'h' + "_%M" + 'm' + "_%S" + 's' + '--' + model_folder)
-    logger = Logger(logname=env_name, now=now)
+    logger = Logger(logname=environment, now=now)
     episode = 0
     scaler = Scaler(obs_dim)
     val_func = NNValueFunction(obs_dim, model_path, seed)
-    policy = Policy(obs_dim, act_dim, kl_targ, model_path, seed, save_x_iteration_model)
+    policy = Policy(obs_dim, act_dim, kl_targ, model_path, seed, save_steps)
 
-    run_policy(env, policy, scaler, logger, episode, save_x_iteration_model)
+    run_policy(env, policy, scaler, logger, episode, save_steps)
 
-    while all_steps < training_steps:
-        trajectories = run_policy(env, policy, scaler, logger, episode, save_x_iteration_model)
+    while all_steps < total_training_steps:
+        trajectories = run_policy(env, policy, scaler, logger, episode, save_steps)
         episode += len(trajectories)
         add_value(trajectories, val_func)
         add_disc_sum_rew(trajectories, gamma)
@@ -217,7 +217,7 @@ def main(gamma, lam, kl_targ, seed, env_name, training_steps, save_x_iteration_m
         policy.update(observes, actions, advantages, logger, all_steps)
         val_func.fit(observes, disc_sum_rew, logger)
         logger.write(display=True)
-        if all_steps > training_steps:
+        if all_steps > total_training_steps:
             policy.save_policy(all_steps)
     logger.close()
     policy.close_sess()
@@ -232,9 +232,9 @@ if __name__ == "__main__":
     parser.add_argument('--kl_targ', type=float, help='D_KL target value',
                         default=0.003)
     parser.add_argument('--seed', type=int, help='Set seed', default=0)
-    parser.add_argument('--env_name', type=str, help='Environment name', default=None)
-    parser.add_argument('--training_steps', type=str, help='All step through the whole training on environment', default=None)
-    parser.add_argument('--save_x_iteration_model', type=str, help='Save our model every x step', default=None)
+    parser.add_argument('--environment', type=str, help='Openai GYM Mujoco Environment', default=None)
+    parser.add_argument('--total_training_steps', type=int, help='Total number of steps allowed during the entire training process', default=None)
+    parser.add_argument('--save_steps', type=int, help='Number of steps after which the models are saved during training', default=None)
 
     args = parser.parse_args()
 
