@@ -3,7 +3,7 @@ import gym
 import numpy as np
 import random
 from policy_dynamic import Policy
-from value_function_deterministic import NNValueFunction
+from value_function import NNValueFunction
 import scipy.signal
 from utils import Logger, Scaler
 from datetime import datetime
@@ -15,10 +15,7 @@ import tensorflow as tf
 all_steps = 0
 max_it = 125
 ep_it = 160
-
-globTimes = []
 model_path = os.path.realpath(os.path.join(os.path.dirname(__file__), '../model'))
-
 
 
 def init_gym(env_name, seed):

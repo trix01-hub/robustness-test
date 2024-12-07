@@ -1,10 +1,3 @@
-"""
-State-Value Function
-
-Written by Patrick Coady (pat-coady.github.io)
-"""
-
-import pickle
 import tensorflow.compat.v1 as tf
 import numpy as np
 import sklearn

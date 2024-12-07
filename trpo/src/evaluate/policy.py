@@ -21,15 +21,12 @@ class Policy(object):
             self.saver = tf.compat.v1.train.Saver()
 
     def _placeholders(self):
-        # observations:
         self.obs_ph = tf.compat.v1.placeholder(tf.compat.v1.float32, (None, self.obs_dim), 'obs')
 
     def _policy_nn(self):
-        # hidden layer sizes determined by obs_dim and act_dim (hid2 is geometric mean)
-        hid1_size = self.obs_dim * 10  # 10 empirically determined
-        hid3_size = self.act_dim * 10  # 10 empirically determined
+        hid1_size = self.obs_dim * 10
+        hid3_size = self.act_dim * 10
         hid2_size = int(np.sqrt(hid1_size * hid3_size))
-        # 3 hidden layers with tanh activations
         out = tf.compat.v1.layers.dense(self.obs_ph, hid1_size, tf.compat.v1.tanh,
                               kernel_initializer=tf.compat.v1.random_normal_initializer(
                                   stddev=np.sqrt(1 / self.obs_dim)), name="h1")

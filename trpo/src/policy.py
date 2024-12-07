@@ -1,8 +1,3 @@
-"""
-NN Policy with KL Divergence Constraint (PPO / TRPO)
-
-Written by Patrick Coady (pat-coady.github.io)
-"""
 import pickle
 import numpy as np
 import tensorflow as tf
@@ -10,7 +5,7 @@ import os
 
 class Policy(object):
     """ NN-based policy approximation """
-    def __init__(self, obs_dim, act_dim, kl_targ, batch_size, model_path, save_x_episode_model):
+    def __init__(self, obs_dim, act_dim, kl_targ, batch_size, model_path, save_x_episode_model, seed):
         """
         Args:
             obs_dim: num observation dimensions (int)
@@ -18,6 +13,7 @@ class Policy(object):
             kl_targ: target KL divergence between pi_old and pi_new
         """
 
+        self.seed = seed
         self.save_x_episode_model = save_x_episode_model
         self.model_path = model_path
         self.graph_path = os.path.realpath(os.path.join(os.path.dirname(__file__), '../graph'))
@@ -35,11 +31,11 @@ class Policy(object):
             self.beta = policy_data['beta']
             self.lr_multiplier = policy_data['lr_multiplier']
         else:
-            self.beta = 1.0  # dynamically adjusted D_KL loss multiplier
-            self.lr_multiplier = 1.0  # dynamically adjust lr when D_KL out of control
+            self.beta = 1.0
+            self.lr_multiplier = 1.0
         self.lr = None
         self.kl_targ = kl_targ
-        self.eta = 50  # multiplier for D_KL-kl_targ hinge-squared loss
+        self.eta = 50
         self.epochs = 20
         self.obs_dim = obs_dim
         self.act_dim = act_dim
@@ -61,16 +57,14 @@ class Policy(object):
 
     def _placeholders(self):
         """ Input placeholders"""
-        # observations, actions and advantages:
         self.obs_ph = tf.compat.v1.placeholder(tf.compat.v1.float32, (None, self.obs_dim), 'obs')
         self.act_ph = tf.compat.v1.placeholder(tf.compat.v1.float32, (None, self.act_dim), 'act')
         self.advantages_ph = tf.compat.v1.placeholder(tf.compat.v1.float32, (None,), 'advantages')
-        # strength of D_KL loss terms:
+
         self.beta_ph = tf.compat.v1.placeholder(tf.compat.v1.float32, (), 'beta')
         self.eta_ph = tf.compat.v1.placeholder(tf.compat.v1.float32, (), 'eta')
-        # learning rate:
         self.lr_ph = tf.compat.v1.placeholder(tf.compat.v1.float32, (), 'eta')
-        # log_vars and means with pi_old (previous step's policy parameters):
+
         self.old_log_vars_ph = tf.compat.v1.placeholder(tf.compat.v1.float32, (self.act_dim,), 'old_log_vars')
         self.old_means_ph = tf.compat.v1.placeholder(tf.compat.v1.float32, (None, self.act_dim), 'old_means')
 
@@ -81,7 +75,6 @@ class Policy(object):
          action based on observation. Trainable variables hold log-variances
          for each action dimension (i.e. variances not determined by NN).
         """
-        # hidden layer sizes determined by obs_dim and act_dim (hid2 is geometric mean)
         hid1_size = self.obs_dim * 10  # 10 empirically determined
         hid3_size = self.act_dim * 10  # 10 empirically determined
         hid2_size = int(np.sqrt(hid1_size * hid3_size))
@@ -90,16 +83,16 @@ class Policy(object):
         # 3 hidden layers with tanh activations
         out = tf.compat.v1.layers.dense(self.obs_ph, hid1_size, tf.compat.v1.tanh,
                               kernel_initializer=tf.compat.v1.random_normal_initializer(
-                                  stddev=np.sqrt(1 / self.obs_dim)), name="h1")
+                                  seed=self.seed, stddev=np.sqrt(1 / self.obs_dim)), name="h1")
         out = tf.compat.v1.layers.dense(out, hid2_size, tf.compat.v1.tanh,
                               kernel_initializer=tf.compat.v1.random_normal_initializer(
-                                  stddev=np.sqrt(1 / hid1_size)), name="h2")
+                                  seed=self.seed, stddev=np.sqrt(1 / hid1_size)), name="h2")
         out = tf.compat.v1.layers.dense(out, hid3_size, tf.compat.v1.tanh,
                               kernel_initializer=tf.compat.v1.random_normal_initializer(
-                                  stddev=np.sqrt(1 / hid2_size)), name="h3")
+                                  seed=self.seed, stddev=np.sqrt(1 / hid2_size)), name="h3")
         self.means = tf.compat.v1.layers.dense(out, self.act_dim,
                                      kernel_initializer=tf.compat.v1.random_normal_initializer(
-                                         stddev=np.sqrt(1 / hid3_size)), name="means")
+                                         seed=self.seed, stddev=np.sqrt(1 / hid3_size)), name="means")
         # logvar_speed is used to 'fool' gradient descent into making faster updates
         # to log-variances. heuristic sets logvar_speed based on network size.
         logvar_speed = (10 * hid3_size) // 48
@@ -150,7 +143,7 @@ class Policy(object):
         """ Sample from distribution, given observation """
         self.sampled_act = (self.means +
                             tf.compat.v1.exp(self.log_vars / 2.0) *
-                            tf.compat.v1.random_normal(shape=(self.act_dim,)))
+                            tf.compat.v1.random_normal(seed=self.seed, shape=(self.act_dim,)))
 
     def _loss_train_op(self):
         """

@@ -1,8 +1,3 @@
-"""
-Logging and Data Scaling Utilities
-
-Written by Patrick Coady (pat-coady.github.io)
-"""
 import pickle
 import numpy as np
 import os

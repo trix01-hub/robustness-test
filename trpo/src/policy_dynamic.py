@@ -1,8 +1,3 @@
-"""
-NN Policy with KL Divergence Constraint (PPO / TRPO)
-
-Written by Patrick Coady (pat-coady.github.io)
-"""
 import pickle
 import numpy as np
 import tensorflow as tf
@@ -23,11 +18,7 @@ class Policy(object):
         self.save_x_episode_model = save_x_episode_model
         self.model_path = model_path
         self.graph_path = os.path.realpath(os.path.join(os.path.dirname(__file__), '../graph'))
-        if(os.path.exists(self.model_path + '/info/episodes.txt')):
-            with open(self.model_path + '/info/episodes.txt') as f:
-                self.episodes = int(f.readlines()[0])
-        else:
-            self.episodes = 0
+        self.episodes = 0
         self.all_steps_remainder = 0
         self.all_steps = 0
 
@@ -172,15 +163,8 @@ class Policy(object):
 
     def _init_session(self):
         """Launch TensorFlow session and initialize variables"""
-        if(self.episodes != 0):
-            with self.g.as_default():
-                self.sess = tf.compat.v1.Session()
-                new_saver = tf.compat.v1.train.import_meta_graph(self.model_path + '/model-' + str(self.episodes) + '.meta')
-                new_saver.restore(self.sess, tf.train.latest_checkpoint(self.model_path))
-        else:
-            self.sess = tf.compat.v1.Session(graph=self.g)
-            writer = tf.compat.v1.summary.FileWriter(self.graph_path, self.sess.graph)
-            self.sess.run(self.init)
+        self.sess = tf.compat.v1.Session(graph=self.g)
+        self.sess.run(self.init)
 
     def sample(self, obs):
         """Draw sample from policy distribution"""
