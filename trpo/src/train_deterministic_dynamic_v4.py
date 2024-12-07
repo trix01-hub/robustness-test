@@ -1,35 +1,8 @@
-#! /usr/bin/env python3
-"""
-PPO: Proximal Policy Optimization
-
-Written by Patrick Coady (pat-coady.github.io)
-
-PPO uses a loss function and gradient descent to approximate
-Trust Region Policy Optimization (TRPO). See these papers for
-details:
-
-TRPO / PPO:
-https://arxiv.org/pdf/1502.05477.pdf (Schulman et al., 2016)
-
-Distributed PPO:
-https://arxiv.org/abs/1707.02286 (Heess et al., 2017)
-
-Generalized Advantage Estimation:
-https://arxiv.org/pdf/1506.02438.pdf
-
-And, also, this GitHub repo which was helpful to me during
-implementation:
-https://github.com/joschu/modular_rl
-
-This implementation learns policies for continuous environments
-in the OpenAI Gym (https://gym.openai.com/). Testing was focused on
-the MuJoCo control tasks.
-"""
 import pickle
 import gym
 import numpy as np
 import random
-from policy_deterministic import Policy
+from policy_dynamic import Policy
 from value_function_deterministic import NNValueFunction
 import scipy.signal
 from utils import Logger, Scaler
@@ -38,7 +11,15 @@ import os
 import argparse
 import tensorflow as tf
 
+
+all_steps = 0
+max_it = 125
+ep_it = 160
+
+globTimes = []
 model_path = os.path.realpath(os.path.join(os.path.dirname(__file__), '../model'))
+
+
 
 def init_gym(env_name, seed):
     """
@@ -54,14 +35,14 @@ def init_gym(env_name, seed):
         number of action dimensions (int)
     """
     env = gym.make(env_name)
-    env.seed(seed)
+    env.action_space.seed(seed)
     obs_dim = env.observation_space.shape[0]
     act_dim = env.action_space.shape[0]
 
     return env, obs_dim, act_dim
 
 
-def run_episode(env, policy, scaler, animate, max_iteration):
+def run_episode(env, policy, scaler, animate, max_iteration, seed):
     """ Run single episode with option to animate
 
     Args:
@@ -77,14 +58,19 @@ def run_episode(env, policy, scaler, animate, max_iteration):
         rewards: shape = (episode len,)
         unscaled_obs: useful for training scaler, shape = (episode len, obs_dim)
     """
+    global all_steps
+    global max_it
     obs = env.reset()
     observes, actions, rewards, unscaled_obs = [], [], [], []
+    done = False
     step = 0.0
     scale, offset = scaler.get()
     scale[-1] = 1.0  # don't scale time step feature
     offset[-1] = 0.0  # don't offset time step feature
     i = 0
-    while env.is_healthy and i < max_iteration:
+    counter = 0
+    obs = obs[0]
+    while env.is_healthy and i < max_it:
         if animate:
             env.render()
         obs = obs.astype(np.float32).reshape((1, -1))
@@ -94,20 +80,27 @@ def run_episode(env, policy, scaler, animate, max_iteration):
         observes.append(obs)
         action = policy.sample(obs).reshape((1, -1)).astype(np.float32)
         actions.append(action)
-        obs, reward, done, _ = env.step(action)
-        reward = reward + env.control_cost(action)
+        action = action[0]
+        plus_cost = env.control_cost(action)
+        obs, reward, done, _, _ = env.step(action)
+        all_steps += 1
         if not isinstance(reward, float):
             reward = np.asscalar(reward)
         rewards.append(reward)
         step += 1e-3  # increment time step feature
         i += 1
+        if i == max_it:
+            counter = 1
 
     return (np.concatenate(observes), np.concatenate(actions),
-            np.array(rewards, dtype=np.float32), np.concatenate(unscaled_obs))
+            np.array(rewards, dtype=np.float32), np.concatenate(unscaled_obs), counter)
 
 
-def run_policy(env, policy, scaler, logger, episodes, animate, episode, max_iteration, save_x_episode_model):
+def run_policy(env, policy, scaler, logger, animate, episode, max_iteration, seed):
     global model_path
+    global all_steps
+    global ep_it
+    global max_it
     """ Run policy and collect data for a minimum of min_steps and min_episodes
 
     Args:
@@ -125,33 +118,50 @@ def run_policy(env, policy, scaler, logger, episodes, animate, episode, max_iter
         'unscaled_obs' : NumPy array of (un-discounted) rewards from episode
     """
 
-    if episode >= 12400:
-        episodes = 10
-        max_iteration = 2000
-
     total_steps = 0
     trajectories = []
-    for e in range(episodes):
-        observes, actions, rewards, unscaled_obs = run_episode(env, policy, scaler, animate, max_iteration)
+    all_counter = 0
+    for e in range(ep_it):
+        observes, actions, rewards, unscaled_obs, counter = run_episode(env, policy, scaler, animate, max_iteration, seed)
         total_steps += observes.shape[0]
         trajectory = {'observes': observes,
                       'actions': actions,
                       'rewards': rewards,
                       'unscaled_obs': unscaled_obs}
         trajectories.append(trajectory)
+        all_counter += counter
+
+    if max_it == 2000 and all_counter > 7:
+        max_it = 4000
+        ep_it = 5
+    if max_it == 1000 and all_counter > 13:
+        max_it = 2000
+        ep_it = 10
+    if max_it == 500 and all_counter > 27:
+        max_it = 1000
+        ep_it = 20
+    if max_it == 250 and all_counter > 53:
+        max_it = 500
+        ep_it = 40
+    if max_it == 125 and all_counter > 107:
+        max_it = 250
+        ep_it = 80
+
     unscaled = np.concatenate([t['unscaled_obs'] for t in trajectories])
     scaler.update(unscaled)  # update running statistics for scaling observations
     # Save scalar datas
     scalar_data = {"vars": scaler.vars, "means": scaler.means, "m": scaler.m}
-    episode += episodes
-    if(episode % save_x_episode_model == 0 and episode != 5 and episode != 0):
-        if not os.path.exists(model_path + '/' + str(episode) + '/info'):
-            os.makedirs(model_path + '/' + str(episode) + '/info')
-        with open(model_path + '/' + str(episode) + "/info/scalar.pkl", "wb") as f:
+    episode += ep_it
+    if(policy.all_steps_remainder < all_steps//1150000):
+        if not os.path.exists(model_path + '/' + str(all_steps) + '/info'):
+            os.makedirs(model_path + '/' + str(all_steps) + '/info')
+        with open(model_path + '/' + str(all_steps) + "/info/scalar.pkl", "wb") as f:
             pickle.dump(scalar_data, f)
 
     logger.log({'_MeanReward': np.mean([t['rewards'].sum() for t in trajectories]),
                 'Steps': total_steps})
+
+    print("ALL STEPS: " + str(all_steps))
 
     return trajectories
 
@@ -271,6 +281,7 @@ def log_batch_stats(observes, actions, advantages, disc_sum_rew, logger, episode
 
 def main(num_episodes, gamma, lam, kl_targ, batch_size, animate, model_folder, max_iteration, save_x_episode_model, seed, env_name):
     global model_path
+    global all_steps
     """ Main training loop
 
     Args:
@@ -304,9 +315,8 @@ def main(num_episodes, gamma, lam, kl_targ, batch_size, animate, model_folder, m
     env, obs_dim, act_dim = init_gym(env_name, seed)
     obs_dim += 1  # add 1 to obs dimension for time step feature (see run_episode())
 
-    now = datetime.now().strftime("%Y-%m-%d_%H" + 'h' + "_%M" + 'm' + "_%S" + 's' + '--' + model_folder)  # create unique directories with model name
+    now = datetime.now().strftime("%Y-%m-%d_%H" + 'h' + "_%M" + 'm' + "_%S" + 's' + '--' + model_folder)
     logger = Logger(logname=env_name, now=now)
-
     if(os.path.exists(model_path + '/info/episodes.txt')):
         with open(model_path + '/info/episodes.txt') as f:
             episode = int(f.readlines()[0])
@@ -316,11 +326,11 @@ def main(num_episodes, gamma, lam, kl_targ, batch_size, animate, model_folder, m
         episode = 0
         scaler = Scaler(obs_dim)
         val_func = NNValueFunction(obs_dim, model_path, save_x_episode_model, seed)
-    policy = Policy(obs_dim, act_dim, kl_targ, batch_size, model_path, save_x_episode_model, seed)
+    policy = Policy(obs_dim, act_dim, kl_targ, batch_size, model_path, save_x_episode_model, seed, 1150000)
     # run a few episodes of untrained policy to initialize scaler:
-    run_policy(env, policy, scaler, logger, 5, animate, episode, max_iteration, save_x_episode_model)
-    while episode < num_episodes:
-        trajectories = run_policy(env, policy, scaler, logger, batch_size, animate, episode, max_iteration, save_x_episode_model)
+    run_policy(env, policy, scaler, logger, animate, episode, max_iteration, seed)
+    while all_steps < 23000000:
+        trajectories = run_policy(env, policy, scaler, logger, animate, episode, max_iteration, seed)
         episode += len(trajectories)
         add_value(trajectories, val_func)  # add estimated values to episodes
         add_disc_sum_rew(trajectories, gamma)  # calculated discounted sum of Rs
@@ -329,9 +339,11 @@ def main(num_episodes, gamma, lam, kl_targ, batch_size, animate, model_folder, m
         observes, actions, advantages, disc_sum_rew = build_train_set(trajectories)
         # add various stats to training log:
         log_batch_stats(observes, actions, advantages, disc_sum_rew, logger, episode)
-        policy.update(observes, actions, advantages, logger, episode)  # update policy
-        val_func.fit(observes, disc_sum_rew, logger, episode)  # update value function
-        logger.write(display=True)  # write logger results to file and stdout
+        policy.update(observes, actions, advantages, logger, all_steps)
+        val_func.fit(observes, disc_sum_rew, logger, episode)
+        logger.write(display=True)
+        if all_steps > 23000000:
+            policy.save_policy(all_steps)
     logger.close()
     policy.close_sess()
     val_func.close_sess()
@@ -357,7 +369,9 @@ if __name__ == "__main__":
     parser.add_argument('-mi', '--max_iteration', type=int, help='Set max iteration number', default=1000)
     parser.add_argument('-sxem', '--save_x_episode_model', type=int, help='Save our model every x episodes', default=None)
     parser.add_argument('-s', '--seed', type=int, help='Set seed', default=0)
-    parser.add_argument('-en', '--env_name', type=str, help='Environment name', default="Walker2d-v3")
+    parser.add_argument('-en', '--env_name', type=str, help='Environment name', default=None)
+    parser.add_argument('-ts', '--training_steps', type=str, help='All step through the whole training on environment', default=None)
+    parser.add_argument('-sxim', '--save_x_iteration_model', type=str, help='Save our model every x step', default=None)
 
     args = parser.parse_args()
 

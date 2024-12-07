@@ -1,7 +1,5 @@
 """
 NN Policy with KL Divergence Constraint (PPO / TRPO)
-
-Written by Patrick Coady (pat-coady.github.io)
 """
 import pickle
 import numpy as np
@@ -36,11 +34,11 @@ class Policy(object):
             self.beta = policy_data['beta']
             self.lr_multiplier = policy_data['lr_multiplier']
         else:
-            self.beta = 1.0  # dynamically adjusted D_KL loss multiplier
-            self.lr_multiplier = 1.0  # dynamically adjust lr when D_KL out of control
+            self.beta = 1.0
+            self.lr_multiplier = 1.0
         self.lr = None
         self.kl_targ = kl_targ
-        self.eta = 50  # multiplier for D_KL-kl_targ hinge-squared loss
+        self.eta = 50
         self.epochs = 20
         self.obs_dim = obs_dim
         self.act_dim = act_dim
@@ -62,16 +60,14 @@ class Policy(object):
 
     def _placeholders(self):
         """ Input placeholders"""
-        # observations, actions and advantages:
         self.obs_ph = tf.compat.v1.placeholder(tf.compat.v1.float32, (None, self.obs_dim), 'obs')
         self.act_ph = tf.compat.v1.placeholder(tf.compat.v1.float32, (None, self.act_dim), 'act')
         self.advantages_ph = tf.compat.v1.placeholder(tf.compat.v1.float32, (None,), 'advantages')
-        # strength of D_KL loss terms:
+
         self.beta_ph = tf.compat.v1.placeholder(tf.compat.v1.float32, (), 'beta')
         self.eta_ph = tf.compat.v1.placeholder(tf.compat.v1.float32, (), 'eta')
-        # learning rate:
         self.lr_ph = tf.compat.v1.placeholder(tf.compat.v1.float32, (), 'eta')
-        # log_vars and means with pi_old (previous step's policy parameters):
+
         self.old_log_vars_ph = tf.compat.v1.placeholder(tf.compat.v1.float32, (self.act_dim,), 'old_log_vars')
         self.old_means_ph = tf.compat.v1.placeholder(tf.compat.v1.float32, (None, self.act_dim), 'old_means')
 
@@ -82,7 +78,6 @@ class Policy(object):
          action based on observation. Trainable variables hold log-variances
          for each action dimension (i.e. variances not determined by NN).
         """
-        # hidden layer sizes determined by obs_dim and act_dim (hid2 is geometric mean)
         hid1_size = self.obs_dim * 10  # 10 empirically determined
         hid3_size = self.act_dim * 10  # 10 empirically determined
         hid2_size = int(np.sqrt(hid1_size * hid3_size))

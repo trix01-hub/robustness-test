@@ -344,7 +344,7 @@ if __name__ == "__main__":
     parser.add_argument('-mf', '--model_folder', type=str, help='Continue a train from model folder', default=None)
     parser.add_argument('-sxem', '--save_x_episode_model', type=int, help='Save our model every x episodes', default=None)
     parser.add_argument('-s', '--seed', type=int, help='Set seed', default=0)
-    parser.add_argument('-en', '--env_name', type=str, help='Env Name', default='Hopper-v4')
+    parser.add_argument('-en', '--env_name', type=str, help='Env Name', default=None)
 
     args = parser.parse_args()
     os.environ["CUDA_VISIBLE_DEVICES"] = str(0)
