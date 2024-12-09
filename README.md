@@ -1,5 +1,3 @@
-
-
 ## S-PPO (Smoothed - Proximal Policy Optimization)
 <p align="center">
   <img src="./fig/SPPO_training.png?raw=true" width="80%" height="80%" />

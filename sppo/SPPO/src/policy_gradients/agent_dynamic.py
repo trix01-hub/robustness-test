@@ -1609,5 +1609,3 @@ class Trainer():
                     advanced_logging=advanced_logging)
 
         return p
-
-
