@@ -515,7 +515,7 @@ class Trainer():
         x_velocity = 0
         for action, env in zip(actions, envs):
             gym_action = action[0].cpu().numpy()
-            new_state, normed_reward, is_done, info = env.step(gym_action)
+            new_state, normed_reward, counter, total_true_reward, is_done, info = env.step(gym_action)
             is_done = not env.env.is_healthy
             x_velocity = info['x_velocity']
             if is_done or t==max_len:
